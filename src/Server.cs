@@ -2,25 +2,33 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-Console.WriteLine("Logs from your program will appear here!");
-
-TcpListener server = new (IPAddress.Any, 4221);
-try
+TcpListener server = new TcpListener(IPAddress.Any, 4221);
+server.Start();
+while (true)
 {
-    server.Start();
-    var socket = server.AcceptSocket();
-    var responseBuffer = new byte[1024];
-    var received = socket.ReceiveAsync(responseBuffer);
-    var response = Encoding.UTF8.GetString(responseBuffer, 0, await received);
-    var parseResponse = response.Split("\r\n");
-    if (parseResponse[0] == "GET / HTTP/1.1")
+    TcpClient client = server.AcceptTcpClient();
+    NetworkStream stream = client.GetStream();
+    byte[] buffer = new byte[1024];
+    int bytesRead = stream.Read(buffer, 0, buffer.Length);
+    string request = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+    string[] lines = request.Split(new string[] { "\r\n" }, StringSplitOptions.None);
+    string[] startLineParts = lines[0].Split(' ');
+    string response;
+    if (startLineParts[1] == "/")
     {
-        socket.Send(Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\n\r\n"));
-    } else {
-        socket.Send(Encoding.UTF8.GetBytes("HTTP/1.1 404 Not Found\r\n\r\n"));
+        response = "HTTP/1.1 200 OK\r\n\r\n";
     }
-}
-finally
-{
-    server.Stop();
+    else if (startLineParts[1].StartsWith("/echo/"))
+    {
+        string message = startLineParts[1].Substring(6);
+        response =
+            $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {message.Length}\r\n\r\n{message}";
+    }
+    else
+    {
+        response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    }
+    byte[] responseBytes = Encoding.ASCII.GetBytes(response);
+    stream.Write(responseBytes, 0, responseBytes.Length);
+    client.Close();
 }
